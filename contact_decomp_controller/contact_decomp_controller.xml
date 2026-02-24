@@ -1,0 +1,8 @@
+<library path="contact_decomp_controller">
+    <class name="contact_decomp_controller/ContactDecompController"
+           type="contact_decomp_controller::ContactDecompController" base_class_type="controller_interface::ControllerInterface">
+        <description>
+            Control a robot by decomposing contact wrench and desired twist.
+        </description>
+    </class>
+</library>

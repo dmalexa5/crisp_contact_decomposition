@@ -88,6 +88,14 @@ RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
     && rm -rf src \
     && mkdir -p src
 
+# Setup up the python virtual environment
+WORKDIR /ros2_ws
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/* \
+    && python3 -m venv /ros2_ws/.venv \
+    && /ros2_ws/.venv/bin/pip install --upgrade pip
+
 COPY ./entrypoint.sh /entrypoint.sh
 RUN sudo chmod +x /entrypoint.sh
 
