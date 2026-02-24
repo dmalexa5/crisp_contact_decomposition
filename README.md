@@ -57,15 +57,19 @@ You must have **docker engine** installed, **_not_** docker desktop. This will i
       ```
   4. **Open a shell inside the container:**
       ```bash
-      docker exec -it crisp_contact_decomposition_humble /bin/bash
+      docker exec -it crisp_contact_decomposition /bin/bash
       ```
       or
       `Ctrl + Shift + P` > `Dev Containers: Attach to Running Container`
   5. **Clone the latests dependencies:**
       ```bash
+      cd /ros2_ws
       vcs import src < src/dependency.repos --recursive --skip-existing
       ```
   6. **Build the workspace:**
+> [!NOTE]
+> This project is in rapid development. Warnings are expected, especially during the first build.
+
       ```bash
       colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
       ```

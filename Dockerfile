@@ -95,4 +95,3 @@ RUN sudo chmod +x /entrypoint.sh
 SHELL [ "/bin/bash", "-c" ]
 ENTRYPOINT [ "/entrypoint.sh" ]
 CMD [ "/bin/bash" ]
-WORKDIR /ros2_ws
