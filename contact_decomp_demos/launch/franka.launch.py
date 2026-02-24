@@ -217,24 +217,24 @@ def generate_launch_description():
                 arguments=["pose_broadcaster"],
                 output="screen",
             ),
-            IncludeLaunchDescription(
-                PythonLaunchDescriptionSource(
-                    [
-                        PathJoinSubstitution(
-                            [
-                                FindPackageShare("franka_gripper"),
-                                "launch",
-                                "gripper.launch.py",
-                            ]
-                        )
-                    ]
-                ),
-                launch_arguments={
-                    robot_ip_parameter_name: robot_ip,
-                    use_fake_hardware_parameter_name: use_fake_hardware,
-                }.items(),
-                condition=IfCondition(load_gripper),
-            ),
+            # IncludeLaunchDescription(
+            #     PythonLaunchDescriptionSource(
+            #         [
+            #             PathJoinSubstitution(
+            #                 [
+            #                     FindPackageShare("franka_gripper"),
+            #                     "launch",
+            #                     "gripper.launch.py",
+            #                 ]
+            #             )
+            #         ]
+            #     ),
+            #     launch_arguments={
+            #         robot_ip_parameter_name: robot_ip,
+            #         use_fake_hardware_parameter_name: use_fake_hardware,
+            #     }.items(),
+            #     condition=IfCondition(load_gripper),
+            # ),
             Node(
                 package="rviz2",
                 executable="rviz2",
