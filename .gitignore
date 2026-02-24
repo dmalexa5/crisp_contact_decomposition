@@ -1,4 +1,6 @@
 .vscode
 libfranka
 franka_description
+crisp_controllers
+crisp_py
 .env
