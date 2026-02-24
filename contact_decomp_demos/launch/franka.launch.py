@@ -32,37 +32,29 @@ from launch_ros.substitutions import FindPackageShare
 
 
 def robot_description_dependent_nodes_spawner(
-    context: LaunchContext,
-    robot_ip,
-    arm_id,
-    use_fake_hardware,
-    fake_sensor_commands,
-    load_gripper,
-    arm_prefix,
-    start_robot_state_publisher,
+    context: LaunchContext
 ):
-    robot_ip_str = context.perform_substitution(robot_ip)
-    arm_id_str = context.perform_substitution(arm_id)
-    arm_prefix_str = context.perform_substitution(arm_prefix)
-    use_fake_hardware_str = context.perform_substitution(use_fake_hardware)
-    fake_sensor_commands_str = context.perform_substitution(fake_sensor_commands)
-    load_gripper_str = context.perform_substitution(load_gripper)
+    robot_type = LaunchConfiguration("robot_type").perform(context)
+    arm_prefix = LaunchConfiguration("arm_prefix").perform(context)
 
     franka_xacro_filepath = os.path.join(
-        get_package_share_directory("crisp_controllers_robot_demos"),
-        "config",
-        "fr3",
-        "fr3_single.urdf.xacro",
+        get_package_share_directory('franka_description'),
+        'robots',
+        robot_type,
+        robot_type + '.urdf.xacro'
     )
+
     robot_description = xacro.process_file(
         franka_xacro_filepath,
         mappings={
-            "arm_id": arm_id_str,
-            "robot_ip": robot_ip_str,
-            "hand": load_gripper_str,
-            "use_fake_hardware": use_fake_hardware_str,
-            "fake_sensor_commands": fake_sensor_commands_str,
-            "arm_prefix": arm_prefix_str,
+            "ros2_control": "true",
+            "robot_type": robot_type,
+            "robot_ip": LaunchConfiguration("robot_ip").perform(context),
+            "hand": LaunchConfiguration("load_gripper").perform(context),
+            "use_fake_hardware": LaunchConfiguration("use_fake_hardware").perform(context),
+            "fake_sensor_commands": LaunchConfiguration("fake_sensor_commands").perform(context),
+            "arm_prefix": arm_prefix,
+            "namespace": LaunchConfiguration("namespace").perform(context),
             "mujoco_model": os.path.join(
                 get_package_share_directory("crisp_controllers_robot_demos"),
                 "config",
@@ -74,11 +66,11 @@ def robot_description_dependent_nodes_spawner(
 
     franka_controllers = PathJoinSubstitution(
         [
-            FindPackageShare("crisp_controllers_robot_demos"),
+            FindPackageShare("contact_decomp_demos"),
             "config",
             "fr3",
-            f"{arm_prefix_str}_controllers.yaml"
-            if arm_prefix_str != ""
+            f"{arm_prefix}_controllers.yaml"
+            if arm_prefix != ""
             else "controllers.yaml",
         ]
     )
@@ -90,7 +82,6 @@ def robot_description_dependent_nodes_spawner(
             name="robot_state_publisher",
             output="screen",
             parameters=[{"robot_description": robot_description}],
-            condition=IfCondition(start_robot_state_publisher),
         ),
         Node(
             package="controller_manager",
@@ -110,23 +101,23 @@ def robot_description_dependent_nodes_spawner(
 
 
 def generate_launch_description():
-    arm_id_parameter_name = "arm_id"
+    robot_type_parameter_name = "robot_type"
     arm_prefix_parameter_name = "arm_prefix"
     robot_ip_parameter_name = "robot_ip"
     load_gripper_parameter_name = "load_gripper"
     use_fake_hardware_parameter_name = "use_fake_hardware"
     fake_sensor_commands_parameter_name = "fake_sensor_commands"
     use_rviz_parameter_name = "use_rviz"
-    start_robot_state_publisher_name = "start_robot_state_publisher"
+    namespace_parameter_name = "namespace"
 
-    arm_id = LaunchConfiguration(arm_id_parameter_name)
+    robot_type = LaunchConfiguration(robot_type_parameter_name)
     arm_prefix = LaunchConfiguration(arm_prefix_parameter_name)
     robot_ip = LaunchConfiguration(robot_ip_parameter_name)
     load_gripper = LaunchConfiguration(load_gripper_parameter_name)
     use_fake_hardware = LaunchConfiguration(use_fake_hardware_parameter_name)
     fake_sensor_commands = LaunchConfiguration(fake_sensor_commands_parameter_name)
     use_rviz = LaunchConfiguration(use_rviz_parameter_name)
-    start_robot_state_publisher = LaunchConfiguration(start_robot_state_publisher_name)
+    namespace = LaunchConfiguration(namespace_parameter_name)
 
     rviz_file = os.path.join(
         get_package_share_directory("franka_description"),
@@ -136,15 +127,6 @@ def generate_launch_description():
 
     robot_description_dependent_nodes_spawner_opaque_function = OpaqueFunction(
         function=robot_description_dependent_nodes_spawner,
-        args=[
-            robot_ip,
-            arm_id,
-            use_fake_hardware,
-            fake_sensor_commands,
-            load_gripper,
-            arm_prefix,
-            start_robot_state_publisher,
-        ],
     )
 
     launch_description = LaunchDescription(
@@ -154,7 +136,8 @@ def generate_launch_description():
                 description="Hostname or IP address of the robot.",
             ),
             DeclareLaunchArgument(
-                arm_id_parameter_name,
+                robot_type_parameter_name,
+                default_value="fr3",
                 description="ID of the type of arm used. Supported values: fer, fr3, fp3",
             ),
             DeclareLaunchArgument(
@@ -186,10 +169,9 @@ def generate_launch_description():
                 description="The prefix of the arm.",
             ),
             DeclareLaunchArgument(
-                start_robot_state_publisher_name,
-                default_value="true",
-                description="",
-            ),
+                namespace_parameter_name,
+                default_value="",
+                description='Namespace for the robot. If not set, the robot will be launched in the root namespace.'),
             Node(
                 package="joint_state_publisher",
                 executable="joint_state_publisher",
@@ -220,12 +202,6 @@ def generate_launch_description():
             Node(
                 package="controller_manager",
                 executable="spawner",
-                arguments=["joint_impedance_controller", "--inactive"],
-                output="screen",
-            ),
-            Node(
-                package="controller_manager",
-                executable="spawner",
                 arguments=["joint_trajectory_controller"],
                 output="screen",
             ),
@@ -239,24 +215,6 @@ def generate_launch_description():
                 package="controller_manager",
                 executable="spawner",
                 arguments=["pose_broadcaster"],
-                output="screen",
-            ),
-            Node(
-                package="controller_manager",
-                executable="spawner",
-                arguments=["external_torques_broadcaster"],
-                output="screen",
-            ),
-            Node(
-                package="controller_manager",
-                executable="spawner",
-                arguments=["torque_feedback_controller", "--inactive"],
-                output="screen",
-            ),
-            Node(
-                package="controller_manager",
-                executable="spawner",
-                arguments=["gravity_compensation", "--inactive"],
                 output="screen",
             ),
             IncludeLaunchDescription(

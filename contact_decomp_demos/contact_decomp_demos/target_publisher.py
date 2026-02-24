@@ -1,6 +1,6 @@
 """Script to publish the target pose of the robot using an Rviz marker."""
 
-from crisp_controllers_robot_demos.interactive_server import (
+from contact_decomp_demos.interactive_server import (
     create_interactive_marker_server,
 )
 import rclpy
