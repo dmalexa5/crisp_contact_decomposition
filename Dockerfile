@@ -10,6 +10,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
 ARG USER_UID=1001
 ARG USER_GID=1001
 ARG USERNAME=user
+ARG MUJOCO_VERSION=3.2.6
 
 # Install essential packages and ROS development tools
 RUN apt-get update && \
@@ -73,9 +74,8 @@ RUN sudo apt-get update \
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*
 
-WORKDIR /ros2_ws
-
 # Install the missing ROS 2 dependencies
+WORKDIR /ros2_ws
 COPY . /ros2_ws/src
 RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
     && vcs import src < src/dependency.repos --recursive --skip-existing \
@@ -87,6 +87,17 @@ RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
     && rm -rf /home/$USERNAME/.ros \
     && rm -rf src \
     && mkdir -p src
+
+# Install MuJoCo
+WORKDIR /home/user
+ENV MUJOCO_VERSION=${MUJOCO_VERSION}
+
+RUN sudo apt update && sudo apt-get install -y libglfw3-dev wget \
+    && wget https://github.com/google-deepmind/mujoco/releases/download/${MUJOCO_VERSION}/mujoco-${MUJOCO_VERSION}-linux-x86_64.tar.gz \
+    && tar -xzf mujoco-${MUJOCO_VERSION}-linux-x86_64.tar.gz -C /home/user \
+
+ENV MUJOCO_PATH=/home/user/mujoco-${MUJOCO_VERSION}
+ENV CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH:$MUJOCO_PATH
 
 # Setup up the python virtual environment
 WORKDIR /ros2_ws
