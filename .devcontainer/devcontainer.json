@@ -1,9 +1,24 @@
 {
-    "name": "ROS 2 Humble Development Container",
-    "privileged": true,
-    "remoteUser": "user",
-    "dockerComposeFile": "../docker-compose.yml",
-    "service": "hybrid_control_humble",
-    "workspaceFolder": "/ros2_ws",
-    "initializeCommand": "echo \"USER_UID=$(id -u $USER)\nUSER_GID=$(id -g $USER)\" > .env"
+  "name": "ROS 2 Humble Development Container",
+  "privileged": true,
+  "remoteUser": "user",
+  "dockerComposeFile": "../docker-compose.yml",
+  "service": "hybrid_control_humble",
+  "workspaceFolder": "/ros2_ws",
+
+  "initializeCommand": "echo \"USER_UID=$(id -u $USER)\nUSER_GID=$(id -g $USER)\" > .env",
+
+  "customizations": {
+    "vscode": {
+      "settings": {
+        "terminal.integrated.defaultProfile.linux": "bash",
+        "terminal.integrated.profiles.linux": {
+          "bash": {
+            "path": "/bin/bash",
+            "args": ["-l"]
+          }
+        }
+      }
+    }
+  }
 }
