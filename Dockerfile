@@ -20,6 +20,7 @@ RUN apt-get update && \
         gdb \
         git \
         nano \
+        tree \
         openssh-client \
         python3-venv \
         python3-colcon-argcomplete \
