@@ -13,7 +13,7 @@ services:
     tty: true
     stdin_open: true
     volumes:
-      - ./:/ros2_ws/src
+      - ./:/ros2_ws
       - /tmp/.X11-unix:/tmp/.X11-unix
       - ./limits.conf:/etc/security/limits.conf
       - /dev:/dev

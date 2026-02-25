@@ -1,0 +1,13 @@
+{
+    "ROS2.distro": "humble",
+    "python.defaultInterpreterPath": "/usr/bin/python3",
+    "python.analysis.extraPaths": [
+        "/opt/ros/humble/lib/python3.10/site-packages",
+        "/opt/ros/humble/local/lib/python3.10/dist-packages",
+        "/ros2_ws/.venv/lib/python3.10/site-packages",
+    ],
+    "C_Cpp.intelliSenseEngine": "default",
+    "C_Cpp.errorSquiggles": "enabled",
+    "cmake.configureOnOpen": false,
+    "cmake.ignoreCMakeListsMissing": true,
+}

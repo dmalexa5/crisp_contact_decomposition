@@ -1,0 +1,10 @@
+{
+  "recommendations": [
+    "ms-vscode.cpptools-extension-pack",
+    "ms-python.python",
+    "ms-python.debugpy",
+    "ms-python.vscode-python-envs",
+    "ms-python.vscode-pylance",
+    "ranch-hand-robotics.urdf-editor",
+  ]
+}

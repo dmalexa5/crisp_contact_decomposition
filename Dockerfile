@@ -20,6 +20,7 @@ RUN apt-get update && \
         gdb \
         git \
         nano \
+        tree \
         openssh-client \
         python3-venv \
         python3-colcon-argcomplete \
@@ -94,17 +95,16 @@ RUN python3 -m venv /ros2_ws/.venv --system-site-packages \
     && touch /ros2_ws/.venv/COLCON_IGNORE
 
 # Install the missing ROS 2 dependencies
-COPY --chown=$USERNAME:$USERNAME . /ros2_ws/src
-RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
-    && vcs import src < src/dependency.repos --recursive --skip-existing \
+COPY --chown=$USERNAME:$USERNAME . /ros2_ws
+RUN mkdir -p /ros2_ws/src \
+    && sudo chown -R $USERNAME:$USERNAME /ros2_ws \
+    && vcs import src < dependency.repos --recursive --skip-existing \
     && sudo apt-get update \
     && rosdep update \
     && rosdep install --from-paths src --ignore-src --rosdistro $ROS_DISTRO -y \
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/* \
-    && rm -rf /home/$USERNAME/.ros \
-    && rm -rf src \
-    && mkdir -p src
+    && rm -rf /home/$USERNAME/.ros
 
 COPY ./entrypoint.sh /entrypoint.sh
 RUN sudo chmod +x /entrypoint.sh
