@@ -18,6 +18,8 @@
   <depend>rsl</depend>
   <depend>tl_expected</depend>
   <depend>pinocchio</depend>
+  <depend>generate_parameter_library</depend>
+  <depend>crisp_controllers</depend>
 
   <test_depend>ament_lint_auto</test_depend>
   <test_depend>ament_lint_cmake</test_depend>
