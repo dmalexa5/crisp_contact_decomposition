@@ -21,12 +21,24 @@ RUN apt-get update && \
         git \
         nano \
         openssh-client \
+        python3-venv \
         python3-colcon-argcomplete \
         python3-colcon-common-extensions \
         sudo \
         vim \
+        libglfw3-dev \
+        wget \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Install MuJoCo
+RUN mkdir -p /opt/mujoco \
+    && wget https://github.com/google-deepmind/mujoco/releases/download/${MUJOCO_VERSION}/mujoco-${MUJOCO_VERSION}-linux-x86_64.tar.gz \
+    && tar -xzf mujoco-${MUJOCO_VERSION}-linux-x86_64.tar.gz -C /opt/mujoco \
+    && rm mujoco-${MUJOCO_VERSION}-linux-x86_64.tar.gz
+
+ENV MUJOCO_DIR=/opt/mujoco/mujoco-${MUJOCO_VERSION}
+ENV MUJOCO_VERSION=${MUJOCO_VERSION}
 
 # Setup user configuration
 RUN groupadd --gid $USER_GID $USERNAME \
@@ -74,9 +86,15 @@ RUN sudo apt-get update \
     && sudo apt-get clean \
     && sudo rm -rf /var/lib/apt/lists/*
 
-# Install the missing ROS 2 dependencies
 WORKDIR /ros2_ws
-COPY . /ros2_ws/src
+
+# Create the python virtual environment
+RUN python3 -m venv /ros2_ws/.venv --system-site-packages \
+    && /ros2_ws/.venv/bin/pip install --upgrade pip \
+    && touch /ros2_ws/.venv/COLCON_IGNORE
+
+# Install the missing ROS 2 dependencies
+COPY --chown=$USERNAME:$USERNAME . /ros2_ws/src
 RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
     && vcs import src < src/dependency.repos --recursive --skip-existing \
     && sudo apt-get update \
@@ -87,25 +105,6 @@ RUN sudo chown -R $USERNAME:$USERNAME /ros2_ws \
     && rm -rf /home/$USERNAME/.ros \
     && rm -rf src \
     && mkdir -p src
-
-# Install MuJoCo
-WORKDIR /home/user
-ENV MUJOCO_VERSION=${MUJOCO_VERSION}
-
-RUN sudo apt update && sudo apt-get install -y libglfw3-dev wget \
-    && wget https://github.com/google-deepmind/mujoco/releases/download/${MUJOCO_VERSION}/mujoco-${MUJOCO_VERSION}-linux-x86_64.tar.gz \
-    && tar -xzf mujoco-${MUJOCO_VERSION}-linux-x86_64.tar.gz -C /home/user \
-
-ENV MUJOCO_PATH=/home/user/mujoco-${MUJOCO_VERSION}
-ENV CMAKE_PREFIX_PATH=$CMAKE_PREFIX_PATH:$MUJOCO_PATH
-
-# Setup up the python virtual environment
-WORKDIR /ros2_ws
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    python3-venv \
-    && rm -rf /var/lib/apt/lists/* \
-    && python3 -m venv /ros2_ws/.venv \
-    && /ros2_ws/.venv/bin/pip install --upgrade pip
 
 COPY ./entrypoint.sh /entrypoint.sh
 RUN sudo chmod +x /entrypoint.sh

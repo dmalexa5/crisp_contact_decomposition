@@ -19,4 +19,8 @@ repositories:
     type: git
     url: https://github.com/dmalexa5/crisp_controllers.git
     version: main
+  crisp_controllers:
+    type: git
+    url: https://github.com/dmalexa5/crisp_controllers_demos
+    version: main
   

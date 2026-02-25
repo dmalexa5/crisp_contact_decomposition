@@ -67,8 +67,8 @@ You must have **docker engine** installed, **_not_** docker desktop. This will i
       vcs import src < src/dependency.repos --recursive --skip-existing
       ```
   6. **Build the workspace:**
-> [!NOTE]
-> This project is in rapid development. Warnings are expected, especially during the first build.
+    > [!NOTE]
+    > This project is in rapid development. Warnings are expected, especially during the first build.
 
       ```bash
       colcon build --symlink-install --cmake-args -DCMAKE_BUILD_TYPE=Release
@@ -76,10 +76,6 @@ You must have **docker engine** installed, **_not_** docker desktop. This will i
   7. **Source the built workspace:**
       ```bash
       source install/setup.bash
-      ```
-  8. **When you are done, you can exit the shell and delete the container**:
-      ```bash
-      docker compose down -t 0
       ```
 
 ### Option B: using Dev Containers in Visual Studio Code
@@ -106,9 +102,47 @@ You must have **docker engine** installed, **_not_** docker desktop. This will i
       source install/setup.bash
       ```
 
+## Python environement setup
+
+This package is set up to install `crisp_py` as an editable python package into a virtual environment that has access to system site packages.
+
+  1. **Activate the virtual environment:**
+      ```bash
+      source /ros2_ws/.venv/bin/activate
+      ```
+  2. **Install crisp_py:**
+      ```bash
+      cd /ros2_ws/src/crisp_py/
+      pip install -e .
+      ```
+
 ## Run Examples
 
-TODO: Launch file run instructions
+### Franka arm operational space control
+This demonstration is a direct application of the CRISP OSC controller and a good starting point for verifying everything works correctly.
+
+  1. **Ensure FCI is enabled**
+      We recommend running the `communication_test` before running the example for the first time.
+      
+      ```bash
+      communication_test <robot-ip>
+      ```
+
+  2. **Start the controllers**
+      In a seperate terminal, start the CRISP cartesian controller and franka gripper node
+      ```bash
+      cd /ros2_ws/ && source install/setup.bash
+      export ROBOT_IP=<your robot ip address>
+      ros2 launch contact_decomp_demos franka.launch.py robot_ip:=$ROBOT_IP & ros2 launch franka_gripper gripper.launch.py robot_ip:=$ROBOT_IP
+      ```
+      In the future, these will likely be launched from the same file.
+    
+  3. **Run the operational space control demo**
+      In the original terminal (with .venv activated), run the demo.
+      ```bash
+      cd /ros2_ws/src/contact_decomp_demos/examples/
+      python3 01_figure_eight_osc.py
+      ```
 
 ## Troubleshooting
 ### libfranka issues
