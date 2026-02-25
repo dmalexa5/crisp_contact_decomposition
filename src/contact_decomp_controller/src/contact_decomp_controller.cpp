@@ -63,10 +63,9 @@ controller_interface::return_type
 ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duration & /*period*/) {
   size_t num_joints = params_.joints.size();
   for (size_t i = 0; i < num_joints; i++) {
-    // TODO(placeholder): later it might be better to get this thing prepared in the
-    // configuration part (not in the control loop)
+    // TODO(controller): move to the configuration part
     auto joint_name = params_.joints[i];
-    auto joint_id = model_.getJointId(joint_name);  // pinocchio joind id might be different
+    auto joint_id = model_.getJointId(joint_name);  // pinocchio joint id might be different
     auto joint = model_.joints[joint_id];
 
     q_ref[i] = exponential_moving_average(q_ref[i], q_target[i], params_.filter.q_ref);
@@ -108,7 +107,8 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
     parse_target_wrench_();
     new_target_wrench_ = false;
   }
-
+  // TODO (controller): get the selection matrix at end effector here
+  
   pinocchio::forwardKinematics(model_, data_, q_pin, dq);
   pinocchio::updateFramePlacements(model_, data_);
 
@@ -121,8 +121,8 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
    * target_position_);*/
   end_effector_pose = data_.oMf[end_effector_frame_id];
 
-  // We consider translation and rotation separately to avoid unatural screw
-  // motions
+  // We consider translation and rotation separately to avoid unatural screw motions
+  // TODO (controller): filter the error by the selection matrix
   if (params_.use_local_jacobian) {
     error.head(3) = end_effector_pose.rotation().transpose() *
       (desired_position_ - end_effector_pose.translation());
@@ -146,6 +146,8 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
     : pinocchio::ReferenceFrame::LOCAL_WORLD_ALIGNED;
   pinocchio::computeFrameJacobian(model_, data_, q_pin, end_effector_frame_id, reference_frame, J);
 
+
+  // TODO (controller): preallocate these matrices and vectors in the configuration phase to avoid dynamic memory allocation in the control loop
   Eigen::MatrixXd J_pinv(model_.nv, 6);
   J_pinv = pseudo_inverse(J, params_.nullspace.regularization);
   Eigen::MatrixXd Id_nv = Eigen::MatrixXd::Identity(model_.nv, model_.nv);
@@ -171,6 +173,7 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
     return controller_interface::return_type::ERROR;
   }
 
+  // TODO (controller): remove this and fix params because we will always use operational space formulation
   if (params_.use_operational_space) {
     tau_task << J.transpose() * Mx * (stiffness * error - damping * (J * dq));
   } else {
@@ -209,6 +212,7 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
     ? pinocchio::computeGeneralizedGravity(model_, data_, q_pin)
     : Eigen::VectorXd::Zero(model_.nv);
 
+  // TODO (controller): this is where the majority of the new implementation will occur
   tau_wrench << J.transpose() * target_wrench_;
 
   tau_d << tau_task + tau_nullspace + tau_friction + tau_coriolis + tau_gravity + tau_joint_limits +
@@ -217,6 +221,7 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
   if (params_.limit_torques) {
     tau_d = saturateTorqueRate(tau_d, tau_previous, params_.max_delta_tau);
   }
+  // TODO (controller): what is this here for?
   tau_d = exponential_moving_average(tau_d, tau_previous, params_.filter.output_torque);
 
   if (!params_.stop_commands) {
@@ -250,6 +255,8 @@ CallbackReturn ContactDecompController::on_init() {
 
 CallbackReturn
 ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous_state*/) {
+
+  // Retrieve the robot description
   auto parameters_client =
     std::make_shared<rclcpp::AsyncParametersClient>(get_node(), "robot_state_publisher");
   parameters_client->wait_for_service();
@@ -265,6 +272,7 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
     return CallbackReturn::ERROR;
   }
 
+  // Build the pinocchio model
   pinocchio::Model raw_model_;
   pinocchio::urdf::buildModelFromXML(robot_description_, raw_model_);
 
@@ -323,6 +331,7 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
     }
   }
 
+  // Preallocate the matrices and vectors that will be used in the control loop to avoid dynamic memory allocation
   end_effector_frame_id = model_.getFrameId(params_.end_effector_frame);
   q = Eigen::VectorXd::Zero(model_.nv);
   q_pin = Eigen::VectorXd::Zero(model_.nq);
@@ -341,6 +350,33 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
   nullspace_stiffness = Eigen::MatrixXd::Zero(model_.nv, model_.nv);
   nullspace_damping = Eigen::MatrixXd::Zero(model_.nv, model_.nv);
 
+  // TODO (controller): Add neccessary preallocations for the new implementation here
+
+  // Initialize all control vectors with appropriate dimensions
+  tau_task = Eigen::VectorXd::Zero(model_.nv);
+  tau_joint_limits = Eigen::VectorXd::Zero(model_.nv);
+  tau_secondary = Eigen::VectorXd::Zero(model_.nv);
+  tau_nullspace = Eigen::VectorXd::Zero(model_.nv);
+  tau_friction = Eigen::VectorXd::Zero(model_.nv);
+  tau_coriolis = Eigen::VectorXd::Zero(model_.nv);
+  tau_gravity = Eigen::VectorXd::Zero(model_.nv);
+  tau_wrench = Eigen::VectorXd::Zero(model_.nv);
+  tau_d = Eigen::VectorXd::Zero(model_.nv);
+
+  // Initialize target state vectors
+  target_position_ = Eigen::Vector3d::Zero();
+  target_orientation_ = Eigen::Quaterniond::Identity();
+  target_wrench_ = Eigen::VectorXd::Zero(6);
+  desired_position_ = Eigen::Vector3d::Zero();
+  desired_orientation_ = Eigen::Quaterniond::Identity();
+
+  // Initialize error vector
+  error = Eigen::VectorXd::Zero(6);
+  max_delta_ = Eigen::VectorXd::Zero(6);
+
+  // Initialize nullspace projection matrix
+  nullspace_projection = Eigen::MatrixXd::Identity(model_.nv, model_.nv);
+
   setStiffnessAndDamping();
 
   new_target_pose_ = false;
@@ -350,6 +386,7 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
   multiple_publishers_detected_ = false;
   max_allowed_publishers_ = 1;
 
+  // Set up subscriptions for target pose, joint state, wrench, and selection matrix
   auto target_pose_callback =
     [this](const std::shared_ptr<geometry_msgs::msg::PoseStamped> msg) -> void {
     if (!check_topic_publisher_count("target_pose")) {
@@ -392,6 +429,8 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
     new_target_wrench_ = true;
   };
 
+  // TODO (controller): add selection matrix callback and subscription here
+
   pose_sub_ = get_node()->create_subscription<geometry_msgs::msg::PoseStamped>(
     "target_pose", rclcpp::QoS(1), target_pose_callback);
 
@@ -400,31 +439,6 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
 
   wrench_sub_ = get_node()->create_subscription<geometry_msgs::msg::WrenchStamped>(
     "target_wrench", rclcpp::QoS(1), target_wrench_callback);
-
-  // Initialize all control vectors with appropriate dimensions
-  tau_task = Eigen::VectorXd::Zero(model_.nv);
-  tau_joint_limits = Eigen::VectorXd::Zero(model_.nv);
-  tau_secondary = Eigen::VectorXd::Zero(model_.nv);
-  tau_nullspace = Eigen::VectorXd::Zero(model_.nv);
-  tau_friction = Eigen::VectorXd::Zero(model_.nv);
-  tau_coriolis = Eigen::VectorXd::Zero(model_.nv);
-  tau_gravity = Eigen::VectorXd::Zero(model_.nv);
-  tau_wrench = Eigen::VectorXd::Zero(model_.nv);
-  tau_d = Eigen::VectorXd::Zero(model_.nv);
-
-  // Initialize target state vectors
-  target_position_ = Eigen::Vector3d::Zero();
-  target_orientation_ = Eigen::Quaterniond::Identity();
-  target_wrench_ = Eigen::VectorXd::Zero(6);
-  desired_position_ = Eigen::Vector3d::Zero();
-  desired_orientation_ = Eigen::Quaterniond::Identity();
-
-  // Initialize error vector
-  error = Eigen::VectorXd::Zero(6);
-  max_delta_ = Eigen::VectorXd::Zero(6);
-
-  // Initialize nullspace projection matrix
-  nullspace_projection = Eigen::MatrixXd::Identity(model_.nv, model_.nv);
 
 #if HAS_ROS2_CONTROL_INTROSPECTION
   if (params_.enable_introspection) {
@@ -494,7 +508,7 @@ CallbackReturn
 ContactDecompController::on_activate(const rclcpp_lifecycle::State & /*previous_state*/) {
   auto num_joints = params_.joints.size();
   for (size_t i = 0; i < num_joints; i++) {
-    // TODO(placeholder): later it might be better to get this thing prepared in the
+    // TODO(controller): DUPLICATE COMMENT! later it might be better to get this thing prepared in the
     // configuration part (not in the control loop)
     auto joint_name = params_.joints[i];
     auto joint_id = model_.getJointId(joint_name);  // pinocchio joind id might be different
@@ -525,6 +539,8 @@ ContactDecompController::on_activate(const rclcpp_lifecycle::State & /*previous_
     dq_ref[i] = state_interfaces_[num_joints + i].get_value();
 #endif
   }
+
+  // TODO (controller): set selection matrix to position control only
 
   pinocchio::forwardKinematics(model_, data_, q_pin, dq);
   pinocchio::updateFramePlacements(model_, data_);
@@ -577,11 +593,14 @@ void ContactDecompController::parse_target_wrench_() {
     msg->wrench.torque.x, msg->wrench.torque.y, msg->wrench.torque.z;
 }
 
+// TODO (controller): add selection matrix parsing function here
+
 void ContactDecompController::log_debug_info(const rclcpp::Time & time) {
   if (!params_.log.enabled) {
     return;
   }
   if (params_.log.robot_state) {
+    // TODO (controller): add selection matrix logging here
     RCLCPP_INFO_STREAM_THROTTLE(
       get_node()->get_logger(),
       *get_node()->get_clock(),
