@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Debug current test (file -> package auto)",
+      "type": "cppdbg",
+      "request": "launch",
+      "program": "${workspaceFolder}/.vscode/last_test_binary",
+      "args": [],
+      "cwd": "${workspaceFolder}",
+      "stopAtEntry": false,
+      "MIMode": "gdb",
+      "miDebuggerPath": "/usr/bin/gdb",
+      "envFile": "${workspaceFolder}/.vscode/last_test_env"
+    }
+  ]
+}
