@@ -6,5 +6,6 @@
     "ms-python.vscode-python-envs",
     "ms-python.vscode-pylance",
     "ranch-hand-robotics.urdf-editor",
+    "ms-toolsai.jupyter",
   ]
 }

@@ -90,7 +90,7 @@ You must have **docker engine** installed, **_not_** docker desktop. This will i
 
   4. **Clone the latests dependencies:**
       ```bash
-      vcs import src < src/dependency.repos --recursive --skip-existing
+      vcs import src < dependency.repos --recursive --skip-existing
       ```
 
   5. **Open a terminal and build the workspace:**
