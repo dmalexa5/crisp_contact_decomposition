@@ -141,6 +141,7 @@ private:
   bool new_target_pose_;
   bool new_target_joint_;
   bool new_target_wrench_;
+  bool new_selection_vector_;
 
   realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::PoseStamped>>
     target_pose_buffer_;

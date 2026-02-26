@@ -78,6 +78,10 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
     parse_target_wrench_();
     new_target_wrench_ = false;
   }
+  if (new_selection_vector_) {
+    parse_selection_vector_();
+    new_selection_vector_ = false;
+  }
   // TODO (controller): get the selection matrix at end effector here
   
   pinocchio::forwardKinematics(model_, data_, q_pin, dq);
@@ -310,7 +314,6 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
   Id_task = Eigen::MatrixXd::Identity(6, 6);
 
   S_pos = Eigen::MatrixXd::Identity(6, 6);
-  // TODO (controller): Add neccessary preallocations for the new implementation here
 
   // Initialize all control vectors with appropriate dimensions
   tau_task = Eigen::VectorXd::Zero(model_.nv);
@@ -390,7 +393,28 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
     new_target_wrench_ = true;
   };
 
-  // TODO (controller): add selection matrix callback and subscription here
+  auto selection_vector_callback =
+    [this](const std::shared_ptr<std_msgs::msg::Float64MultiArray> msg) -> void {
+    if (!check_topic_publisher_count("selection_vector")) {
+      RCLCPP_WARN_THROTTLE(
+        get_node()->get_logger(),
+        *get_node()->get_clock(),
+        1000,
+        "Ignoring selection_vector message due to multiple publishers detected!");
+      return;
+    }
+    if (!msg->data.size() == 6) {
+      RCLCPP_WARN_THROTTLE(
+        get_node()->get_logger(),
+        *get_node()->get_clock(),
+        1000,
+        "Received selection vector message with incorrect size: expected 6 but got %zu",
+        msg->data.size());
+      return;
+    }
+    selection_vector_buffer_.writeFromNonRT(msg);
+    new_selection_vector_ = true;
+  };
 
   pose_sub_ = get_node()->create_subscription<geometry_msgs::msg::PoseStamped>(
     "target_pose", rclcpp::QoS(1), target_pose_callback);
@@ -400,6 +424,9 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
 
   wrench_sub_ = get_node()->create_subscription<geometry_msgs::msg::WrenchStamped>(
     "target_wrench", rclcpp::QoS(1), target_wrench_callback);
+
+  selection_sub_ = get_node()->create_subscription<std_msgs::msg::Float64MultiArray>(
+    "selection_vector", rclcpp::QoS(1), selection_vector_callback);
 
 #if HAS_ROS2_CONTROL_INTROSPECTION
   if (params_.enable_introspection) {
@@ -561,7 +588,10 @@ void ContactDecompController::parse_target_wrench_() {
     msg->wrench.torque.x, msg->wrench.torque.y, msg->wrench.torque.z;
 }
 
-// TODO (controller): add selection matrix parsing function here
+void ContactDecompController::parse_selection_vector_() {
+  auto msg = *selection_vector_buffer_.readFromRT();
+  S_pos = Eigen::Map<const Eigen::Matrix<double, 6, 1>>(msg->data.data()).asDiagonal();
+}
 
 void ContactDecompController::log_debug_info(const rclcpp::Time & time) {
   if (!params_.log.enabled) {
