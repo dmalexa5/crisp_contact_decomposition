@@ -14,6 +14,7 @@
 #include <controller_interface/controller_interface.hpp>
 #include <geometry_msgs/msg/pose_stamped.hpp>
 #include <geometry_msgs/msg/wrench_stamped.hpp>
+#include <std_msgs/msg/float64_multi_array.hpp>
 #include <pinocchio/algorithm/kinematics.hpp>
 #include <pinocchio/multibody/fwd.hpp>
 #include <rclcpp/rclcpp.hpp>
@@ -90,6 +91,8 @@ private:
   rclcpp::Subscription<sensor_msgs::msg::JointState>::SharedPtr joint_sub_;
   /** @brief Subscription for target wrench messages */
   rclcpp::Subscription<geometry_msgs::msg::WrenchStamped>::SharedPtr wrench_sub_;
+  /** @brief Subscription for selection vector messages */
+  rclcpp::Subscription<std_msgs::msg::Float64MultiArray>::SharedPtr selection_sub_;
 
   /** @brief Flag to indicate if multiple publishers detected */
   bool multiple_publishers_detected_;
@@ -101,6 +104,17 @@ private:
    * @brief Set the stiffness and damping matrices based on parameters
    */
   void setStiffnessAndDamping();
+
+  /**
+   * @brief Get the current state of the robot from hardware interfaces and update internal variables
+   * @param filter_measurements Whether to apply exponential moving average filtering to the measurements
+   */
+  void updateCurrentState(bool filter_measurements = true);
+
+  /**
+   * @brief Read state from hardware interfaces and update the current joint positions and velocities
+   */
+  void getCurrentState();
 
   /**
    * @brief Reads the target pose in realtime loop from the buffer and parses it to be used in the controller.
@@ -117,6 +131,13 @@ private:
    */
   void parse_target_wrench_();
 
+  /**
+   * @brief Reads the selection vector in realtime loop from the buffer and parses it to be used in the controller.
+   */
+  void parse_selection_vector_();
+
+  size_t num_joints_;
+
   bool new_target_pose_;
   bool new_target_joint_;
   bool new_target_wrench_;
@@ -129,6 +150,9 @@ private:
 
   realtime_tools::RealtimeBuffer<std::shared_ptr<geometry_msgs::msg::WrenchStamped>>
     target_wrench_buffer_;
+
+  realtime_tools::RealtimeBuffer<std::shared_ptr<std_msgs::msg::Float64MultiArray>>
+    selection_vector_buffer_;
 
   /** @brief Target position in Cartesian space */
   Eigen::Vector3d target_position_;
@@ -159,10 +183,18 @@ private:
   /** @brief Cartesian damping matrix (6x6) */
   Eigen::MatrixXd damping = Eigen::MatrixXd::Zero(6, 6);
 
+  /** @brief Joint-space identity matrix */
+  Eigen::MatrixXd Id_nv;
+  /** @brief Task-space identity matrix */
+  Eigen::MatrixXd Id_task;
+
   /** @brief Nullspace stiffness matrix for posture control */
   Eigen::MatrixXd nullspace_stiffness;
   /** @brief Nullspace damping matrix for posture control */
   Eigen::MatrixXd nullspace_damping;
+
+  /** @brief Position selection matrix */
+  Eigen::MatrixXd S_pos;
 
   /** @brief Current joint positions with dimension nv. */
   Eigen::VectorXd q;
@@ -187,6 +219,21 @@ private:
   pinocchio::SE3 end_effector_pose;
   /** @brief End effector Jacobian matrix */
   pinocchio::Data::Matrix6x J;
+  /** @brief Jacobian pseudo-inverse matrix */
+  Eigen::MatrixXd J_pseudoinv;
+  /** @brief Reduced position Jacobian */
+  Eigen::MatrixXd J_rp;
+  /** @brief Reduced force Jacobian */
+  Eigen::MatrixXd J_rf;
+
+  /** @brief Inverse of the position-reduced manipulator joint mass projected in Cartesian space (6x6) */
+  Eigen::Matrix<double, 6, 6> Mx_p_inv = Eigen::Matrix<double, 6, 6>::Zero();
+  /** @brief The position-reduced manipulator joint mass projected in Cartesian space (6x6) */
+  Eigen::Matrix<double, 6, 6> Mx_p = Eigen::Matrix<double, 6, 6>::Zero();
+  /** @brief Inverse of the force-reduced manipulator joint mass projected in Cartesian space (6x6) */
+  Eigen::Matrix<double, 6, 6> Mx_f_inv = Eigen::Matrix<double, 6, 6>::Zero();
+  /** @brief The force-reduced manipulator joint mass projected in Cartesian space (6x6) */
+  Eigen::Matrix<double, 6, 6> Mx_f = Eigen::Matrix<double, 6, 6>::Zero();
 
   /** @brief Friction parameters 1 of size nv */
   Eigen::VectorXd fp1;
@@ -212,8 +259,10 @@ private:
   /** @brief Maximum allowed delta values for error clipping */
   Eigen::VectorXd max_delta_ = Eigen::VectorXd::Zero(6);
 
-  /** @brief Nullspace projection matrix */
-  Eigen::MatrixXd nullspace_projection;
+  /** @brief Position nullspace projection matrix */
+  Eigen::MatrixXd nullspace_projection_pos;
+  /** @brief Task (position and force) nullspace projection matrix*/
+  Eigen::MatrixXd nullspace_projection_task;
 
   /** @brief Task space error vector (6x1) */
   Eigen::VectorXd error = Eigen::VectorXd::Zero(6);
@@ -236,11 +285,6 @@ private:
   Eigen::VectorXd tau_wrench;
   /** @brief Final desired torque command */
   Eigen::VectorXd tau_d;
-
-  /** @brief Inverse of the manipulator joint mass projected in Cartesian space (6x6) */
-  Eigen::Matrix<double, 6, 6> Mx_inv = Eigen::Matrix<double, 6, 6>::Zero();
-  /** @brief the manipulator joint mass projected in Cartesian space (6x6) */
-  Eigen::Matrix<double, 6, 6> Mx = Eigen::Matrix<double, 6, 6>::Zero();
 
   /**
    * @brief Log debug information based on parameter settings

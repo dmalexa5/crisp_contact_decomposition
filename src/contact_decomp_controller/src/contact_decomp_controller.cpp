@@ -61,40 +61,11 @@ ContactDecompController::state_interface_configuration() const {
 
 controller_interface::return_type
 ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duration & /*period*/) {
-  size_t num_joints = params_.joints.size();
-  for (size_t i = 0; i < num_joints; i++) {
-    // TODO(controller): move to the configuration part
-    auto joint_name = params_.joints[i];
-    auto joint_id = model_.getJointId(joint_name);  // pinocchio joint id might be different
-    auto joint = model_.joints[joint_id];
+  
+  // Update current state information with EMA filtered values
+  updateCurrentState();
 
-    q_ref[i] = exponential_moving_average(q_ref[i], q_target[i], params_.filter.q_ref);
-
-// Filtering joint position measurement 1 uses previous q, 0 uses new q from measurement.
-// q[i] = exponential_moving_average(q[i], state_interfaces_[i].get_value(), params_.filter.q);
-#if ROS2_VERSION_ABOVE_HUMBLE
-    q[i] = exponential_moving_average(
-      q[i], state_interfaces_[i].get_optional().value_or(q[i]), params_.filter.q);
-#else
-    q[i] = exponential_moving_average(q[i], state_interfaces_[i].get_value(), params_.filter.q);
-#endif
-
-    if (continous_joint_types.count(joint.shortname())) {  // Then we are handling a continous
-                                                           // joint that is SO(2)
-      q_pin[joint.idx_q()] = std::cos(q[i]);
-      q_pin[joint.idx_q() + 1] = std::sin(q[i]);
-    } else {  // simple revolute joint case
-      q_pin[joint.idx_q()] = q[i];
-    }
-#if ROS2_VERSION_ABOVE_HUMBLE
-    dq[i] = exponential_moving_average(
-      dq[i], state_interfaces_[num_joints + i].get_optional().value_or(dq[i]), params_.filter.dq);
-#else
-    dq[i] = exponential_moving_average(
-      dq[i], state_interfaces_[num_joints + i].get_value(), params_.filter.dq);
-#endif
-  }
-
+  // Check if new targets available
   if (new_target_pose_) {
     parse_target_pose_();
     new_target_pose_ = false;
@@ -140,45 +111,39 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
     error = error.cwiseMax(-max_delta_).cwiseMin(max_delta_);
   }
 
+  pinocchio::computeMinverse(model_, data_, q_pin);
+  data_.Minv.triangularView<Eigen::StrictlyLower>() =
+    data_.Minv.transpose().triangularView<Eigen::StrictlyLower>();
+
   J.setZero();
   auto reference_frame = params_.use_local_jacobian
     ? pinocchio::ReferenceFrame::LOCAL
     : pinocchio::ReferenceFrame::LOCAL_WORLD_ALIGNED;
   pinocchio::computeFrameJacobian(model_, data_, q_pin, end_effector_frame_id, reference_frame, J);
+  J_pseudoinv = pseudo_inverse(J, params_.jacobian_regularization);
+  
+  J_rp = S_pos * J;
+  Mx_p_inv = J_rp * data_.Minv * J_rp.transpose();
+  Mx_p = pseudo_inverse(Mx_p_inv, params_.task_space_regularization);
+  nullspace_projection_pos = Id_nv - data_.Minv * J_rp.transpose() * Mx_p * J_rp;
 
+  J_rf = (Id_task - S_pos) * J * nullspace_projection_pos;
+  Mx_f_inv = J_rf * data_.Minv * J_rf.transpose();
+  Mx_f = pseudo_inverse(Mx_f_inv, params_.task_space_regularization);
+  nullspace_projection_task = nullspace_projection_pos * (Id_nv - data_.Minv * J_rf.transpose() * Mx_f * J_rf);
 
-  // TODO (controller): preallocate these matrices and vectors in the configuration phase to avoid dynamic memory allocation in the control loop
-  Eigen::MatrixXd J_pinv(model_.nv, 6);
-  J_pinv = pseudo_inverse(J, params_.nullspace.regularization);
-  Eigen::MatrixXd Id_nv = Eigen::MatrixXd::Identity(model_.nv, model_.nv);
-  if (params_.nullspace.projector_type == "dynamic" || params_.use_operational_space) {
-    pinocchio::computeMinverse(model_, data_, q_pin);
-    data_.Minv.triangularView<Eigen::StrictlyLower>() =
-      data_.Minv.transpose().triangularView<Eigen::StrictlyLower>();
-    Mx_inv = J * data_.Minv * J.transpose();
-    Mx = pseudo_inverse(Mx_inv);
-  }
+  tau_task << J_rp.transpose() * Mx_p * (stiffness * error - damping * (J * dq));
 
-  if (params_.nullspace.projector_type == "dynamic") {
-    auto J_bar = data_.Minv * J.transpose() * Mx;
-    nullspace_projection = Id_nv - J.transpose() * J_bar.transpose();
-  } else if (params_.nullspace.projector_type == "kinematic") {
-    nullspace_projection = Id_nv - J_pinv * J;
-  } else if (params_.nullspace.projector_type == "none") {
-    nullspace_projection = Eigen::MatrixXd::Identity(model_.nv, model_.nv);
-  } else {
-    RCLCPP_ERROR_STREAM_ONCE(
-      get_node()->get_logger(),
-      "Unknown nullspace projector type: " << params_.nullspace.projector_type);
-    return controller_interface::return_type::ERROR;
-  }
+  tau_wrench << nullspace_projection_pos * J_rf.transpose() * target_wrench_;
 
-  // TODO (controller): remove this and fix params because we will always use operational space formulation
-  if (params_.use_operational_space) {
-    tau_task << J.transpose() * Mx * (stiffness * error - damping * (J * dq));
-  } else {
-    tau_task << J.transpose() * (stiffness * error - damping * (J * dq));
-  }
+  tau_secondary << nullspace_stiffness * (q_ref - q) + nullspace_damping * (dq_ref - dq);
+
+  tau_nullspace << nullspace_projection_task * tau_secondary;
+  tau_nullspace =
+    tau_nullspace.cwiseMin(params_.nullspace.max_tau).cwiseMax(-params_.nullspace.max_tau);
+
+  tau_friction =
+    params_.use_friction ? get_friction(dq, fp1, fp2, fp3) : Eigen::VectorXd::Zero(model_.nv);
 
   if (model_.nq != model_.nv) {
     // TODO(placeholder): Then we have some continuous joints, not being handled for now
@@ -192,15 +157,6 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
       params_.joint_limit_repulsion.max_torque);
   }
 
-  tau_secondary << nullspace_stiffness * (q_ref - q) + nullspace_damping * (dq_ref - dq);
-
-  tau_nullspace << nullspace_projection * tau_secondary;
-  tau_nullspace =
-    tau_nullspace.cwiseMin(params_.nullspace.max_tau).cwiseMax(-params_.nullspace.max_tau);
-
-  tau_friction =
-    params_.use_friction ? get_friction(dq, fp1, fp2, fp3) : Eigen::VectorXd::Zero(model_.nv);
-
   if (params_.use_coriolis_compensation) {
     pinocchio::computeAllTerms(model_, data_, q_pin, dq);
     tau_coriolis = pinocchio::computeCoriolisMatrix(model_, data_, q_pin, dq) * dq;
@@ -212,20 +168,16 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
     ? pinocchio::computeGeneralizedGravity(model_, data_, q_pin)
     : Eigen::VectorXd::Zero(model_.nv);
 
-  // TODO (controller): this is where the majority of the new implementation will occur
-  tau_wrench << J.transpose() * target_wrench_;
-
-  tau_d << tau_task + tau_nullspace + tau_friction + tau_coriolis + tau_gravity + tau_joint_limits +
-      tau_wrench;
+  tau_d << tau_task + tau_wrench + tau_nullspace + tau_friction + tau_coriolis + tau_gravity + tau_joint_limits;
 
   if (params_.limit_torques) {
     tau_d = saturateTorqueRate(tau_d, tau_previous, params_.max_delta_tau);
   }
-  // TODO (controller): what is this here for?
+
   tau_d = exponential_moving_average(tau_d, tau_previous, params_.filter.output_torque);
 
   if (!params_.stop_commands) {
-    for (size_t i = 0; i < num_joints; ++i) {
+    for (size_t i = 0; i < num_joints_; ++i) {
 #if ROS2_VERSION_ABOVE_HUMBLE
       (void)command_interfaces_[i].set_value(tau_d[i]);
 #else
@@ -332,6 +284,7 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
   }
 
   // Preallocate the matrices and vectors that will be used in the control loop to avoid dynamic memory allocation
+  num_joints_ = params_.joints.size();
   end_effector_frame_id = model_.getFrameId(params_.end_effector_frame);
   q = Eigen::VectorXd::Zero(model_.nv);
   q_pin = Eigen::VectorXd::Zero(model_.nq);
@@ -341,7 +294,10 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
   dq_ref = Eigen::VectorXd::Zero(model_.nv);
   tau_previous = Eigen::VectorXd::Zero(model_.nv);
   J = Eigen::MatrixXd::Zero(6, model_.nv);
-
+  J_pseudoinv = Eigen::MatrixXd::Zero(model_.nv, 6);
+  J_rp = Eigen::MatrixXd::Zero(6, model_.nv);
+  J_rf = Eigen::MatrixXd::Zero(6, model_.nv);
+  
   // Map the friction parameters to Eigen vectors
   fp1 = Eigen::Map<Eigen::VectorXd>(params_.friction.fp1.data(), model_.nv);
   fp2 = Eigen::Map<Eigen::VectorXd>(params_.friction.fp2.data(), model_.nv);
@@ -350,6 +306,10 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
   nullspace_stiffness = Eigen::MatrixXd::Zero(model_.nv, model_.nv);
   nullspace_damping = Eigen::MatrixXd::Zero(model_.nv, model_.nv);
 
+  Id_nv = Eigen::MatrixXd::Identity(model_.nv, model_.nv);
+  Id_task = Eigen::MatrixXd::Identity(6, 6);
+
+  S_pos = Eigen::MatrixXd::Identity(6, 6);
   // TODO (controller): Add neccessary preallocations for the new implementation here
 
   // Initialize all control vectors with appropriate dimensions
@@ -375,7 +335,8 @@ ContactDecompController::on_configure(const rclcpp_lifecycle::State & /*previous
   max_delta_ = Eigen::VectorXd::Zero(6);
 
   // Initialize nullspace projection matrix
-  nullspace_projection = Eigen::MatrixXd::Identity(model_.nv, model_.nv);
+  nullspace_projection_pos = Eigen::MatrixXd::Identity(model_.nv, model_.nv);
+  nullspace_projection_task = Eigen::MatrixXd::Identity(model_.nv, model_.nv);
 
   setStiffnessAndDamping();
 
@@ -504,41 +465,48 @@ void ContactDecompController::setStiffnessAndDamping() {
   }
 }
 
-CallbackReturn
-ContactDecompController::on_activate(const rclcpp_lifecycle::State & /*previous_state*/) {
-  auto num_joints = params_.joints.size();
-  for (size_t i = 0; i < num_joints; i++) {
-    // TODO(controller): DUPLICATE COMMENT! later it might be better to get this thing prepared in the
-    // configuration part (not in the control loop)
+void ContactDecompController::updateCurrentState(bool filter_measurements) {
+  for (size_t i = 0; i < num_joints_; i++) {
     auto joint_name = params_.joints[i];
     auto joint_id = model_.getJointId(joint_name);  // pinocchio joind id might be different
     auto joint = model_.joints[joint_id];
 
 #if ROS2_VERSION_ABOVE_HUMBLE
-    q[i] = state_interfaces_[i].get_optional().value_or(q[i]);
+    double q_meas = state_interfaces_[i].get_optional().value_or(q[i]);
+    double qd_meas = state_interfaces_[num_joints + i].get_optional().value_or(dq[i]);
 #else
-    q[i] = state_interfaces_[i].get_value();
+    double q_meas = state_interfaces_[i].get_value();
+    double dq_meas = state_interfaces_[num_joints_ + i].get_value();
 #endif
-    if (joint.shortname() == "JointModelRZ") {  // simple revolute joint case
-      q_pin[joint.idx_q()] = q[i];
-    } else if (continous_joint_types.count(
-                 joint.shortname())) {  // Then we are handling a continous
-                                        // joint that is SO(2)
+    
+    q_ref[i] = filter_measurements 
+      ? exponential_moving_average(q_ref[i], q_target[i], params_.filter.q_ref)
+      : q_meas;
+
+    q[i] = filter_measurements
+      ? exponential_moving_average(q[i], q_meas, params_.filter.q)
+      : q_meas;    
+    
+    if (continous_joint_types.count(joint.shortname())) { // Then we are handling a continous
+                                                          // joint that is SO(2)
       q_pin[joint.idx_q()] = std::cos(q[i]);
       q_pin[joint.idx_q() + 1] = std::sin(q[i]);
+    } else {  // simple revolute joint case
+      q_pin[joint.idx_q()] = q[i];
     }
 
-    q_ref[i] = q[i];
-    q_target[i] = q[i];
-
-#if ROS2_VERSION_ABOVE_HUMBLE
-    dq[i] = state_interfaces_[num_joints + i].get_optional().value_or(dq[i]);
-    dq_ref[i] = dq[i];
-#else
-    dq[i] = state_interfaces_[num_joints + i].get_value();
-    dq_ref[i] = state_interfaces_[num_joints + i].get_value();
-#endif
+    dq[i] = filter_measurements
+      ? exponential_moving_average(dq[i], dq_meas, params_.filter.dq)
+      : dq_meas;
   }
+}
+
+CallbackReturn
+ContactDecompController::on_activate(const rclcpp_lifecycle::State & /*previous_state*/) {
+  
+  // Update the current state with initial measurements (no EMA filtering)
+  // to avoid large initial errors
+  updateCurrentState(false);
 
   // TODO (controller): set selection matrix to position control only
 
@@ -716,7 +684,12 @@ void ContactDecompController::log_debug_info(const rclcpp::Time & time) {
       get_node()->get_logger(),
       *get_node()->get_clock(),
       1000,
-      "nullspace projector: " << nullspace_projection);
+      "nullspace position projector: " << nullspace_projection_pos);
+    RCLCPP_INFO_STREAM_THROTTLE(
+      get_node()->get_logger(),
+      *get_node()->get_clock(),
+      1000,
+      "nullspace task projector: " << nullspace_projection_task);
   }
 
   if (params_.log.timing) {
