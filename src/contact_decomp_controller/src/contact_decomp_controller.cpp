@@ -82,8 +82,7 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
     parse_selection_vector_();
     new_selection_vector_ = false;
   }
-  // TODO (controller): get the selection matrix at end effector here
-  
+    
   pinocchio::forwardKinematics(model_, data_, q_pin, dq);
   pinocchio::updateFramePlacements(model_, data_);
 
@@ -97,7 +96,6 @@ ContactDecompController::update(const rclcpp::Time & time, const rclcpp::Duratio
   end_effector_pose = data_.oMf[end_effector_frame_id];
 
   // We consider translation and rotation separately to avoid unatural screw motions
-  // TODO (controller): filter the error by the selection matrix
   if (params_.use_local_jacobian) {
     error.head(3) = end_effector_pose.rotation().transpose() *
       (desired_position_ - end_effector_pose.translation());
@@ -535,7 +533,8 @@ ContactDecompController::on_activate(const rclcpp_lifecycle::State & /*previous_
   // to avoid large initial errors
   updateCurrentState(false);
 
-  // TODO (controller): set selection matrix to position control only
+  // Set selection matrix to position control only
+  S_pos = Eigen::Matrix<double, 6, 1>::Ones(6);
 
   pinocchio::forwardKinematics(model_, data_, q_pin, dq);
   pinocchio::updateFramePlacements(model_, data_);
@@ -598,7 +597,6 @@ void ContactDecompController::log_debug_info(const rclcpp::Time & time) {
     return;
   }
   if (params_.log.robot_state) {
-    // TODO (controller): add selection matrix logging here
     RCLCPP_INFO_STREAM_THROTTLE(
       get_node()->get_logger(),
       *get_node()->get_clock(),
