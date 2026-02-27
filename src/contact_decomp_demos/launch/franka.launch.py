@@ -55,12 +55,6 @@ def robot_description_dependent_nodes_spawner(
             "fake_sensor_commands": LaunchConfiguration("fake_sensor_commands").perform(context),
             "arm_prefix": arm_prefix,
             "namespace": LaunchConfiguration("namespace").perform(context),
-            "mujoco_model": os.path.join(
-                get_package_share_directory("crisp_controllers_robot_demos"),
-                "config",
-                "fr3",
-                "scene.xml",
-            ),
         },
     ).toprettyxml(indent="  ")
 
@@ -241,12 +235,6 @@ def generate_launch_description():
                 name="rviz2",
                 arguments=["--display-config", rviz_file],
                 condition=IfCondition(use_rviz),
-            ),
-            Node(
-                package="crisp_controllers_robot_demos",
-                executable="crisp_py_franka_hand_adapter",
-                name="crisp_py_franka_hand_adapter",
-                output="screen",
             ),
         ]
     )
