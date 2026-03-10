@@ -11,4 +11,8 @@ crisp_controllers
 crisp_controllers_demos
 crisp_py
 .env
+.venv
 __pycache__
+build
+install
+log

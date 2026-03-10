@@ -61,6 +61,7 @@ find_package(Eigen3 REQUIRED)
 find_package(pinocchio REQUIRED)
 find_package(realtime_tools REQUIRED)
 find_package(generate_parameter_library REQUIRED)
+find_package(crisp_controllers REQUIRED)
 
 generate_parameter_library(
   contact_decomp_controller_parameters
@@ -93,7 +94,7 @@ endif()
 
 # Link parameter libraries to the main library
 target_link_libraries(${PROJECT_NAME}
-  PRIVATE
+  PUBLIC
     contact_decomp_controller_parameters
 )
 
@@ -110,6 +111,7 @@ ament_target_dependencies(${PROJECT_NAME}
     realtime_tools
     rsl
     tl_expected
+    crisp_controllers
 )
 
 pluginlib_export_plugin_description_file(
@@ -145,6 +147,7 @@ ament_export_dependencies(
   realtime_tools
   rsl
   tl_expected
+  crisp_controllers
 )
 
 if(BUILD_TESTING)

@@ -1,4 +1,4 @@
-cartesian_controller:
+contact_decomp_controller:
   joints:
     type: string_array
     description: "Names of the joints"
@@ -10,19 +10,21 @@ cartesian_controller:
   base_frame:
     type: string
     default_value: ""
-    description: "Name of the end-effector frame"
+    description: "Name of the base frame"
 
-  use_operational_space:
-    type: bool
-    default_value: False
-    description: "Whether we use operational space control or cartesian impedance control"
-
-  operational_space_regularization:
+  task_space_regularization:
     type: double
-    default_value: 0.1
+    default_value: 0.01
     description: "Regularization (damping) for Mx pseudo-inverse. Higher values improve stability near singularities but reduce accuracy. Valid range is 0.001-1.0; typical useful values are in the 0.01-0.5 range."
     validation:
       bounds<>: [0.001, 1.0]
+  
+  jacobian_regularization:
+      type: double
+      default_value: 0.000001
+      description: "Regularization value for the pseudo-inverse."
+      validation:
+        bounds<>: [0.000001, 0.0001]
 
   task:
     k_pos_x:
@@ -144,18 +146,6 @@ cartesian_controller:
           description: "Weights for each joint for the nullspace parameters."
           validation:
             bounds<>: [0.0, 500.0]
-    regularization:
-      type: double
-      default_value: 0.000001
-      description: "Regularization value for the pseudo-inverse."
-      validation:
-        bounds<>: [0.000001, 0.0001]
-    projector_type:
-      type: string
-      default_value: "kinematic"
-      description: "Which type of nullspace projector should be used: kinematic, dynamic or none."
-      validation:
-        one_of<>: [["kinematic", "dynamic", "none"]]
     max_tau:
       type: double
       default_value: 5
