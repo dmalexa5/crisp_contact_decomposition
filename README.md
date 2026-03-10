@@ -15,7 +15,7 @@
 The **crisp_contact_decomposition** repository extends the [CRISP ROS2 controllers](https://github.com/utiasDSL/crisp_controllers) to a task-space hybrid control formulation that decomposes _SE(3)_ into independant pose-controlled and wrench-controlled subspaces, allowing for simultaneous position and force control in real time. This controller is compatible with ROS2, and is experimentally verified on hardware via the Franka Research 3 manipulator arm.
 
 <div align="center">
-  <video src="docs/assets/force_position_control_demo.mp4" autoplay loop muted style="max-width: 50%;"></video>
+  <img src="docs/assets/force_position_control_demo.gif" width="50%" alt="Force Position Control Demo">
 </div>
 
 All work supported by the **Hybrid Intelligent Experimental Robotics Lab** at North Carolina State University. **[Visit the HIER Lab website](https://hier-robotics.github.io/).**
