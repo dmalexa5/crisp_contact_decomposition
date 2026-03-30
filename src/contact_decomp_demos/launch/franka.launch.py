@@ -36,6 +36,7 @@ def robot_description_dependent_nodes_spawner(
 ):
     robot_type = LaunchConfiguration("robot_type").perform(context)
     arm_prefix = LaunchConfiguration("arm_prefix").perform(context)
+    namespace = LaunchConfiguration("namespace").perform(context)
 
     franka_xacro_filepath = os.path.join(
         get_package_share_directory('franka_description'),
@@ -74,12 +75,14 @@ def robot_description_dependent_nodes_spawner(
             package="robot_state_publisher",
             executable="robot_state_publisher",
             name="robot_state_publisher",
+            namespace=namespace,
             output="screen",
             parameters=[{"robot_description": robot_description}],
         ),
         Node(
             package="controller_manager",
             executable="ros2_control_node",
+            namespace=namespace,
             parameters=[
                 franka_controllers,
                 {"robot_description": robot_description},
@@ -170,6 +173,7 @@ def generate_launch_description():
                 package="joint_state_publisher",
                 executable="joint_state_publisher",
                 name="joint_state_publisher",
+                namespace=namespace,
                 parameters=[
                     {
                         "source_list": [
@@ -184,51 +188,58 @@ def generate_launch_description():
             Node(
                 package="controller_manager",
                 executable="spawner",
+                namespace=namespace,
                 arguments=["joint_state_broadcaster"],
                 output="screen",
             ),
             Node(
                 package="controller_manager",
                 executable="spawner",
+                namespace=namespace,
                 arguments=["cartesian_impedance_controller", "--inactive"],
                 output="screen",
             ),
             Node(
                 package="controller_manager",
                 executable="spawner",
+                namespace=namespace,
                 arguments=["joint_trajectory_controller"],
                 output="screen",
             ),
             Node(
                 package="controller_manager",
                 executable="spawner",
+                namespace=namespace,
                 arguments=["twist_broadcaster"],
                 output="screen",
             ),
             Node(
                 package="controller_manager",
                 executable="spawner",
+                namespace=namespace,
                 arguments=["pose_broadcaster"],
                 output="screen",
             ),
-            # IncludeLaunchDescription(
-            #     PythonLaunchDescriptionSource(
-            #         [
-            #             PathJoinSubstitution(
-            #                 [
-            #                     FindPackageShare("franka_gripper"),
-            #                     "launch",
-            #                     "gripper.launch.py",
-            #                 ]
-            #             )
-            #         ]
-            #     ),
-            #     launch_arguments={
-            #         robot_ip_parameter_name: robot_ip,
-            #         use_fake_hardware_parameter_name: use_fake_hardware,
-            #     }.items(),
-            #     condition=IfCondition(load_gripper),
-            # ),
+            IncludeLaunchDescription(
+                PythonLaunchDescriptionSource(
+                    [
+                        PathJoinSubstitution(
+                            [
+                                FindPackageShare("franka_gripper"),
+                                "launch",
+                                "gripper.launch.py",
+                            ]
+                        )
+                    ]
+                ),
+                launch_arguments={
+                    robot_ip_parameter_name: robot_ip,
+                    "robot_type": robot_type,
+                    use_fake_hardware_parameter_name: use_fake_hardware,
+                    namespace_parameter_name: namespace,
+                }.items(),
+                condition=IfCondition(load_gripper),
+            ),
             Node(
                 package="rviz2",
                 executable="rviz2",
